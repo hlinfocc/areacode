@@ -28,7 +28,8 @@ sqlSaveIndex = 1
 #当一条insert 的 values达到该值后重新生成新的一条insert
 sqlSaveIndexEnd = 10000
 #保存的文件名
-saveFileName = "data/areacode2020.sql"
+saveFileName = "data/areacode2020-all.sql"
+# saveFileName = "data/areacode2020-simple.sql"
 
 ####function echo() start######
 def echo( param,*args ):
