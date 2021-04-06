@@ -6,6 +6,7 @@ import os
 import re
 from bs4 import BeautifulSoup
 import string
+import time
 
 #设置请求头
 request_headers = {
@@ -13,7 +14,7 @@ request_headers = {
     "Accept-Encoding": "gzip, deflate",
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.5",
     "Cache-Control": "max-age=0",
-    "Connection": "keep-alive",
+    "Connection": "close",
     "Cookie": "_trs_uv=jz3i785b_6_2zxi; AD_RS_COOKIE=20088745",
     "Host": "www.stats.gov.cn",
     "DNT": "1",
@@ -22,6 +23,7 @@ request_headers = {
     "Upgrade-Insecure-Requests": "1",
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:80.0) Gecko/20100101 Firefox/80.0"
 }
+proxies = {"https": "60.170.111.51:3888", "http": "61.155.4.135:3128","http":"60.207.194.118:80","https":"60.191.11.241:3128","http":"121.232.148.189:9000","http":"218.59.193.14:3864","http":"","http":"175.42.123.185:9999","https":"112.91.75.44:9999","http":"101.132.111.208:8082","http":"223.241.79.174:8118","https":"139.196.152.221:8080","https":"222.129.37.3:5711"}
 
 #insert语句的索引，当达到指定值后重新生成insert
 sqlSaveIndex = 1
@@ -30,6 +32,7 @@ sqlSaveIndexEnd = 10000
 #保存的文件名
 saveFileName = "data/areacode2020-all.sql"
 # saveFileName = "data/areacode2020-simple.sql"
+provinceReg = ''
 
 ####function echo() start######
 def echo( param,*args ):
@@ -100,8 +103,19 @@ def createTablePgSQL():
     COMMENT ON COLUMN public.areacode2020.parent_code IS '父级code';
     '''
     return sql
-def getItem(itemData, dataArray, parentRequestUrl, table, type):
+
+def generateSql(item):
     global sqlSaveIndex
+    if sqlSaveIndex == 1:
+        writeSql("insert into areacode2020(area_name,code,type,parent_code) values ('%s','%s',%s,'%s')" % (item['name'], item['code'], item['type'], item['parentCode']) + ",")
+    elif sqlSaveIndex == sqlSaveIndexEnd:
+        writeSql("('%s','%s',%s,'%s')" % (item['name'], item['code'], item['type'], item['parentCode']) + ";\n")
+        sqlSaveIndex = 0
+    else:
+        writeSql("('%s','%s',%s,'%s')" % (item['name'], item['code'], item['type'], item['parentCode']) + ",")
+    sqlSaveIndex +=1
+    
+def getItem(itemData, dataArray, parentRequestUrl, table, type):
     item = {}
     # 名称
     if(type == 5):
@@ -123,22 +137,16 @@ def getItem(itemData, dataArray, parentRequestUrl, table, type):
     # 打印出sql语句
     #print('insert into areacodeinfo(area,code,type,parent_code) values (%s,%s,%s,%s)' % (item['name'], item['code'], item['type'], item['parentCode']) + ";")
     echoinfo(item['name'], item['code'])
-    if sqlSaveIndex == 1:
-        writeSql("insert into areacode2020(area_name,code,type,parent_code) values ('%s','%s',%s,'%s')" % (item['name'], item['code'], item['type'], item['parentCode']) + ",")
-    elif sqlSaveIndex == sqlSaveIndexEnd:
-        writeSql("('%s','%s',%s,'%s')" % (item['name'], item['code'], item['type'], item['parentCode']) + ";\n")
-        sqlSaveIndex = 0
-    else:
-        writeSql("('%s','%s',%s,'%s')" % (item['name'], item['code'], item['type'], item['parentCode']) + ",")
-    sqlSaveIndex +=1
+    generateSql(item)
     return item
 
 # 获取BeautifulSoup
 def getSoup(requestUrl):
+    requests.adapters.DEFAULT_RETRIES = 5  # 增加重连次数
     htmls = requests.get(requestUrl, headers=request_headers)
     htmls.encoding = 'GBK'
     #soup = BeautifulSoup(htmls.text, 'html.parser', from_encoding='UTF-8')
-    echo(htmls.text)
+    #echo(htmls.text)
     soup = BeautifulSoup(htmls.text, 'html.parser')
     return soup
 
@@ -150,13 +158,19 @@ def forItem(soup, label, labelClass, labelChild, item, requestUrl, type, tableNa
             continue
         itemData = getItem(item, array, requestUrl, tableName, type)
         lists.append(itemData)
+    #time.sleep(2)
 
 
 # 省列表
 def getProvince(provinceList,proviceUrl):
     soup = getSoup(proviceUrl)
-    for link in soup.find_all('a', class_=''):
-    #for link in soup.find_all(href=re.compile('^52.html')):
+    if provinceReg.strip() == '':
+        provinceData = soup.find_all('a', class_='')
+    else:
+        provinceData = soup.find_all(href=re.compile(provinceReg))
+    #for link in soup.find_all('a', class_=''):
+    #for link in soup.find_all(href=re.compile(provinceReg)):
+    for link in provinceData:
         requestCityUrl = re.findall('(.*)/', proviceUrl)
         item = {}
         # 名称
@@ -174,8 +188,8 @@ def getProvince(provinceList,proviceUrl):
         provinceList.append(item)
         # 打印出sql语句
         # print('====>',types)
-        writeSql("insert into areacode2020(area_name,code,type,parent_code) values ('%s','%s',%s,'%s')" % ((item['name']), item['code'], item['type'], item['parentCode']) + ";\n")
         echoinfo(item['name'],item['code'])
+        generateSql(item)
     return provinceList
 
 # 市/州列表
@@ -184,6 +198,7 @@ def getCityList(provinceList,cityList):
         cityRequestUrl = str(item.get('url'))
         soup = getSoup(item.get('url'))
         forItem(soup, 'tr', 'citytr', 'a', item, cityRequestUrl, 2, 'city', cityList)
+    #time.sleep(1)
     return cityList
 # 区/县列表
 def getCountyList(cityList,countyList):
@@ -207,8 +222,7 @@ def getVillageList(townList,villageList):
         forItem(soup, 'tr', 'villagetr', 'td', item,villageRequestUrl, 5, 'village', villageList)
     return villageList
 
-
-def main():
+def startSpiders():
     proviceUrl = 'http://www.stats.gov.cn/tjsj/tjbz/tjyqhdmhcxhfdm/2020/index.html'
     if not os.path.exists('data'):
         os.mkdir('data')
@@ -217,13 +231,48 @@ def main():
     countyList = []
     townList = []
     villageList = []
-    provinceList = getProvince(provinceList,proviceUrl)
-    #cityList = getCityList(provinceList,cityList)
-    #countyList = getCountyList(cityList,countyList)
-    #townList = getTownList(countyList,townList)
-    #getVillageList(townList,villageList)
-    #将最后的，变成；
-    #replaceLastChar()
+    provinceList = getProvince(provinceList, proviceUrl)
+    cityList = getCityList(provinceList, cityList)
+    countyList = getCountyList(cityList, countyList)
+    townList = getTownList(countyList, townList)
+    getVillageList(townList, villageList)
+    # 将最后的，变成；
+    replaceLastChar()
+    
+def mergeData():
+    privinceCodeList = [11, 12, 13, 14, 15, 21, 22, 23, 31, 32, 33, 34, 35, 36, 37, 41, 42, 43, 44, 45, 46, 50, 51, 52, 53, 54, 61, 62, 63, 64, 65]
+    for item in privinceCodeList:
+        fileName = "data/areacode2020-%s.sql" % item
+        with open(fileName, 'r+') as fo:
+            filedata = fo.read(-1)
+        if filedata.strip() == '':
+            continue
+        writeSql(filedata)
+
+def clearAllContentSaveFile():
+    try:
+        fp=open(saveFileName,"w+",encoding="utf-8")
+        fp.write("")
+    finally:
+        fp.close()
+
+def main():
+    global saveFileName
+    saveFileName = "data/areacode2020-all.sql"
+    # saveFileName = "data/areacode2020-simple.sql"
+    global provinceReg
+    global sqlSaveIndex
+    #按照省份抓取数据
+    privinceCodeList = [11, 12, 13, 14, 15, 21, 22, 23, 31, 32, 33, 34, 35, 36, 37, 41, 42, 43, 44, 45, 46, 50, 51, 52, 53, 54, 61, 62, 63, 64, 65]
+    for item in privinceCodeList:
+        saveFileName = "data/areacode2020-%s.sql" % item
+        provinceReg = '^%s.html' % item
+        sqlSaveIndex == 1
+        startSpiders()
+        time.sleep(5)
+    #合并所有省份数据
+    clearAllContentSaveFile()
+    mergeData()
 
 if __name__ == "__main__":
     main()
