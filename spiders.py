@@ -27,14 +27,19 @@ proxies = {"https": "60.170.111.51:3888", "http": "61.155.4.135:3128","http":"60
 
 #数据年份
 dataYear=2021
+#是否值爬取省、市/州、区/县三个级别数据
+simpleData = False
 
 #insert语句的索引，当达到指定值后重新生成insert
 sqlSaveIndex = 1
 #当一条insert 的 values达到该值后重新生成新的一条insert
 sqlSaveIndexEnd = 10000
 #保存的文件名
-saveFileName = "data/areacode%s-all.sql" % dataYear
-# saveFileName = "data/areacode%s-simple.sql" % dataYear
+if simpleData:
+    saveFileName = "data/areacode%s-simple.sql" % dataYear
+else:
+    saveFileName = "data/areacode%s-all.sql" % dataYear
+
 provinceReg = ''
 
 ####function echo() start######
@@ -78,13 +83,13 @@ def echoinfo(name,code):
 
 def createTableMySQL():
     create_tb_cmd = '''
-            CREATE TABLE IF NOT EXISTS areacode{0} (
-            code  varchar(20) PRIMARY KEY NOT NULL COMMENT '地址code',
-            area_name  varchar(255) DEFAULT '' COMMENT '名字',
-            type  int COMMENT '级别,1:省,2:市/州，3区县，4乡镇，5村',
-            parent_code varchar(20) COMMENT '父级code ',
-            KEY `areacode_index` (`parent_code`)
-            ) DEFAULT CHARSET=utf8 COMMENT='地址表{0}';\n
+    CREATE TABLE IF NOT EXISTS areacode{0} (
+        code  varchar(20) PRIMARY KEY NOT NULL COMMENT '地址code',
+        area_name  varchar(255) DEFAULT '' COMMENT '名字',
+        type  int COMMENT '级别,1:省,2:市/州，3区县，4乡镇，5村',
+        parent_code varchar(20) COMMENT '父级code ',
+        KEY `areacode_index` (`parent_code`)
+    ) DEFAULT CHARSET=utf8 COMMENT='地址表{0}';\n
     '''.format(dataYear)
     return create_tb_cmd
 
@@ -210,7 +215,7 @@ def getCountyList(cityList,countyList):
         soup = getSoup(item.get('url'))
         forItem(soup, 'tr', 'countytr', 'a', item, countyRequestUrl, 3, 'county', countyList)
     return countyList
-# 城镇列表
+# 乡镇列表
 def getTownList(countyList,townList):
     for item in countyList:
         townRequestUrl = str(item.get('url'))
@@ -235,10 +240,11 @@ def startSpiders():
     townList = []
     villageList = []
     provinceList = getProvince(provinceList, proviceUrl)
-    cityList = getCityList(provinceList, cityList)
+    cityList = getCityList(provinceList, cityList)    
     countyList = getCountyList(cityList, countyList)
-    townList = getTownList(countyList, townList)
-    getVillageList(townList, villageList)
+    if not simpleData:
+        townList = getTownList(countyList, townList)
+        getVillageList(townList, villageList)
     # 将最后的，变成；
     replaceLastChar()
     
@@ -259,10 +265,32 @@ def clearAllContentSaveFile():
     finally:
         fp.close()
 
-def main():
+############### help start ##########################
+def _help():
+    echo("Usage: %s [Options] [parameter]" % (sys.argv[0]))
+    echo("Options:")
+    echo("    -?,-h,-help,--help \t :this help")
+    echo("    -sql,-c or -sql [year],-c [year] \t :show create databases sql")
+    echo("    -y [year] \t :spider all data,Set the parameter dataYear is [year]")
+    echo("    -s [year] \t :spider simple data(Only province,city,county),Set the parameter dataYear is [year]")
+############### help end ##########################
+
+###########chk is number############
+def is_num_by_except(num):
+    try:
+        int(num)
+        return True
+    except (ValueError,TypeError):
+        print("ERROR: the '%s' is not number" % (num))
+        return False
+########## function : chk is number ###############
+########## function : spidersMain ###############
+def spidersMain():
     global saveFileName
-    saveFileName = "data/areacode%s-all.sql" % dataYear
-    # saveFileName = "data/areacode%s-simple.sql" % dataYear
+    if simpleData:
+        saveFileName = "data/areacode%s-simple.sql" % dataYear
+    else:
+        saveFileName = "data/areacode%s-all.sql" % dataYear
     global provinceReg
     global sqlSaveIndex
     #按照省份抓取数据
@@ -276,6 +304,39 @@ def main():
     #合并所有省份数据
     clearAllContentSaveFile()
     mergeData()
+
+def main():
+    global dataYear
+    global simpleData
+    argvlen=len(sys.argv)
+    if argvlen==1:
+        spidersMain()
+    else:
+        for ii in range(1,argvlen):
+            if sys.argv[ii] == '-sql' or sys.argv[ii] == '-c':
+                if argvlen==3:
+                    if is_num_by_except(sys.argv[ii+1]) and len(sys.argv[ii+1])==4:
+                        dataYear = sys.argv[ii+1]
+                echo("MySQL create databases SQL is:")
+                echo(createTableMySQL())
+                echo("PostgreSQL create databases SQL is:")
+                echo(createTablePgSQL())
+                break
+            elif sys.argv[ii] == '-y':
+                 if argvlen==3:
+                    if is_num_by_except(sys.argv[ii+1]) and len(sys.argv[ii+1])==4:
+                        dataYear = sys.argv[ii+1]
+                 spidersMain()
+                 break
+            elif sys.argv[ii] == '-s':
+                 if argvlen==3:
+                    if is_num_by_except(sys.argv[ii+1]) and len(sys.argv[ii+1])==4:
+                        dataYear = sys.argv[ii+1]
+                 simpleData = True
+                 spidersMain()
+                 break
+            else:
+                _help()
 
 if __name__ == "__main__":
     main()

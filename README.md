@@ -12,23 +12,50 @@ pip3 install requests
 pip3 install bs4
 ```
 
-2. 配置数据库表名
+2. 配置数据年份
 
-默认表名为areacode2020，如果需要改成其他表名，请将spiders.py文件中的areacode2020改成你的表名。
+请将spiders.py文件中的29行dataYear改成需要抓取的年份。
+
+```
+#数据年份
+dataYear=2021
+
+```
 
 3. 保存的文件
 
-最后生成的SQL insert语句保存的文件名及路径位于当前目录下的data目录中，默认文件包为：areacode2020-all.sql，如需修改，位于31行：
-
-`saveFileName = "data/areacode2020-all.sql"`
+最后生成的SQL insert语句保存的文件名及路径位于当前目录下的data目录中，默认文件为：areacode2020-all.sql，其中年份为数据年份dataYear参数。
 
 4. 运行
 
 ```
 python3 spiders.py
+
+#指定年份
+python3 spiders.py -y 2021
+#只爬取省、市州、区县三个级别数据
+python3 spiders.py -s 2021
+
+```
+
+5. 显示帮助
+
+```
+python3 spiders.py -?
 ```
 
 ## 数据库表字段信息
+
+可以通过命令查看：
+
+```
+python3 spiders.py -sql
+```
+
+指定年份：
+```
+python3 spiders.py -sql 2021
+```
 
 1. MySQL数据库建表语句为：
 
