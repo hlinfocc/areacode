@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+
 import requests
 import sys
 import os
@@ -15,13 +16,13 @@ request_headers = {
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.5",
     "Cache-Control": "max-age=0",
     "Connection": "close",
-    "Cookie": "_trs_uv=jz3i785b_6_2zxi; AD_RS_COOKIE=20088745",
+    "Cookie": "_trs_uv=kfw9b79k_6_b2tv; SF_cookie_1=37059734",
     "Host": "www.stats.gov.cn",
     "DNT": "1",
-    "If-Modified-Since": "Thu, 10 Sep 2021 05:53:29 GMT",
-    "If-None-Match": "1c98-580baa54b4840-gzip",
+    "If-Modified-Since": "Tue, 04 Jan 2022 07:43:24 GMT",
+    "If-None-Match": "1736-5d4bccabedf00-gzip",
     "Upgrade-Insecure-Requests": "1",
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:80.0) Gecko/20100101 Firefox/80.0"
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:95.0) Gecko/20100101 Firefox/95.0"
 }
 proxies = {"https": "60.170.111.51:3888", "http": "61.155.4.135:3128","http":"60.207.194.118:80","https":"60.191.11.241:3128","http":"121.232.148.189:9000","http":"218.59.193.14:3864","http":"","http":"175.42.123.185:9999","https":"112.91.75.44:9999","http":"101.132.111.208:8082","http":"223.241.79.174:8118","https":"139.196.152.221:8080","https":"222.129.37.3:5711"}
 
@@ -42,6 +43,9 @@ else:
 
 provinceReg = ''
 
+#正则匹配meta的charset
+patternMetaCharset = re.compile(r'<meta.+?charset=[\'|"]?([^\'"]+)[\'|"]?[?:\s+|>|\/>]', re.IGNORECASE)
+allCharset=['utf-8','gbk','gb2312','iso-8859-1','gb18030','utf-16','utf-32']
 ####function echo() start######
 def echo( param,*args ):
     if len(args)==0:
@@ -53,6 +57,34 @@ def echo( param,*args ):
             else:
                 print(param)
 ####function echo() end#######
+
+#省份代码缓存
+provinceCodeCache=[]
+#####读取省份代码缓存#############
+def getProvinceCodeCache():
+    global provinceCodeCache
+    provinceCodeCache.clear()
+    try:
+        fpc=open("cache.data","a+",encoding="utf-8")
+        cacheResult = fpc.readlines()
+        if len(cacheResult)>0:
+            for cacheItem in cacheResult:
+                cacheItem = cacheItem.strip()
+                provinceCodeCache.append(cacheItem)
+    except:
+        echo("没有缓存...")
+    finally:
+        fpc.close()
+###########写入省份代码缓存#########
+def writeProvinceCodeCache(code):
+    try:
+        fpc=open("cache.data","a+",encoding="utf-8")
+        fpc.write("%d\n" % code)#\n用来换行
+    except:
+        echo("写入缓存出错...")
+    finally:
+        fpc.close()
+###########缓存操作结束############
 
 def writeSql(sql):
     try:
@@ -152,7 +184,16 @@ def getItem(itemData, dataArray, parentRequestUrl, table, type):
 def getSoup(requestUrl):
     requests.adapters.DEFAULT_RETRIES = 5  # 增加重连次数
     htmls = requests.get(requestUrl, headers=request_headers)
-    htmls.encoding = 'GBK'
+    htmls.encoding = 'utf-8'
+    try:
+        resultMetaCharset = patternMetaCharset.search(htmls.text)
+        if resultMetaCharset:
+            pageCharset = resultMetaCharset.group(1).lower()
+            rsCharsetIdx = allCharset.index(pageCharset)
+            if rsCharsetIdx>0:
+                htmls.encoding = resultMetaCharset.group(1)
+    except:
+        echo('charset is not in default list')
     #soup = BeautifulSoup(htmls.text, 'html.parser', from_encoding='UTF-8')
     #echo(htmls.text)
     soup = BeautifulSoup(htmls.text, 'html.parser')
@@ -232,8 +273,11 @@ def getVillageList(townList,villageList):
 
 def startSpiders():
     proviceUrl = 'http://www.stats.gov.cn/tjsj/tjbz/tjyqhdmhcxhfdm/%s/index.html' % dataYear
-    if not os.path.exists('data'):
-        os.mkdir('data')
+    baseDir = "data/%s" % dataYear
+    #if not os.path.exists('data'):
+    #    os.mkdir('data')
+    if not os.path.exists(baseDir):
+        os.makedirs(baseDir,exist_ok=True)
     provinceList = []
     cityList = []
     countyList = []
@@ -247,16 +291,24 @@ def startSpiders():
         getVillageList(townList, villageList)
     # 将最后的，变成；
     replaceLastChar()
-    
+
 def mergeData():
     privinceCodeList = [11, 12, 13, 14, 15, 21, 22, 23, 31, 32, 33, 34, 35, 36, 37, 41, 42, 43, 44, 45, 46, 50, 51, 52, 53, 54, 61, 62, 63, 64, 65]
     for item in privinceCodeList:
-        fileName = "data/areacode%s-%s.sql" % (dataYear,item)
+        fileName = "data/%s/areacode%s-%s.sql" % (dataYear,dataYear,item)
         with open(fileName, 'r+') as fo:
             filedata = fo.read(-1)
         if filedata.strip() == '':
             continue
         writeSql(filedata)
+        if simpleData and os.path.exists(fileName):
+            os.remove(fileName)
+    echo("合并完成!")
+    echo("清除缓存...","")
+    if os.path.exists("cache.data"):
+        os.remove("cache.data")
+        echo("OK")
+    echo("运行结束^_^")
 
 def clearAllContentSaveFile():
     try:
@@ -293,21 +345,33 @@ def spidersMain():
         saveFileName = "data/areacode%s-all.sql" % dataYear
     global provinceReg
     global sqlSaveIndex
+    global provinceCodeCache
     #按照省份抓取数据
     privinceCodeList = [11, 12, 13, 14, 15, 21, 22, 23, 31, 32, 33, 34, 35, 36, 37, 41, 42, 43, 44, 45, 46, 50, 51, 52, 53, 54, 61, 62, 63, 64, 65]
+    getProvinceCodeCache()
     for item in privinceCodeList:
-        saveFileName = "data/areacode%s-%s.sql" % (dataYear,item)
+        if provinceCodeCache.count(item)>0:
+            continue
+        saveFileName = "data/%s/areacode%s-%s.sql" % (dataYear,dataYear,item)
+        if os.path.exists(saveFileName):
+            os.remove(saveFileName)
         provinceReg = '^%s.html' % item
-        sqlSaveIndex == 1
+        sqlSaveIndex = 1
         startSpiders()
         time.sleep(5)
+        writeProvinceCodeCache(item)
     #合并所有省份数据
+    if simpleData:
+        saveFileName = "data/areacode%s-simple.sql" % dataYear
+    else:
+        saveFileName = "data/areacode%s-all.sql" % dataYear
     clearAllContentSaveFile()
     mergeData()
 
 def main():
     global dataYear
     global simpleData
+    echo("爬虫开始...")
     argvlen=len(sys.argv)
     if argvlen==1:
         spidersMain()
